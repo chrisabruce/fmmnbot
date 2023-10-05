@@ -1,1 +1,3 @@
 /target
+.env
+fmmnbot.db
