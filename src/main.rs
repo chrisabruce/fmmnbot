@@ -10,7 +10,7 @@ use serenity::model::application::component::ButtonStyle;
 use serenity::model::prelude::*;
 use serenity::prelude::*;
 
-mod db;
+mod storage;
 
 fn sound_button(name: &str, emoji: ReactionType) -> CreateButton {
     let mut b = CreateButton::default();
@@ -24,32 +24,44 @@ fn sound_button(name: &str, emoji: ReactionType) -> CreateButton {
     b
 }
 
-struct Handler;
+struct Handler {
+    db: storage::Data,
+}
 
 #[async_trait]
 impl EventHandler for Handler {
     async fn message(&self, ctx: Context, msg: Message) {
-        if msg.content != "!animal" {
+        if msg.content != "!director" {
             return;
         }
 
-        // Ask the user for its favorite animal
+        // Ask the user for its favorite director
         let m = msg
-            .channel_id
-            .send_message(&ctx, |m| {
-                m.content("Please select your favorite animal")
+            .author
+            .dm(&ctx, |m| {
+                m.content("Please select your favorite director")
                     .components(|c| {
                         c.create_action_row(|row| {
                             // An action row can only contain one select menu!
                             row.create_select_menu(|menu| {
-                                menu.custom_id("animal_select");
-                                menu.placeholder("No animal selected");
+                                menu.custom_id("director_select");
+                                menu.placeholder("No director selected");
                                 menu.options(|f| {
-                                    f.create_option(|o| o.label("🐈 meow").value("Cat"));
-                                    f.create_option(|o| o.label("🐕 woof").value("Dog"));
-                                    f.create_option(|o| o.label("🐎 neigh").value("Horse"));
-                                    f.create_option(|o| o.label("🦙 hoooooooonk").value("Alpaca"));
-                                    f.create_option(|o| o.label("🦀 crab rave").value("Ferris"))
+                                    f.create_option(|o| {
+                                        o.label("🎬 Steven Spielberg").value("Steven Spielberg")
+                                    });
+                                    f.create_option(|o| {
+                                        o.label("🎬 Stanley Kubrick").value("Stanley Kubrick")
+                                    });
+                                    f.create_option(|o| {
+                                        o.label("🎬 Martin Scorsese").value("Martin Scorsese")
+                                    });
+                                    f.create_option(|o| {
+                                        o.label("🎬 Alfred Hitchcock").value("Alfred Hitchcock")
+                                    });
+                                    f.create_option(|o| {
+                                        o.label("🎬 Quentin Tarantino").value("Quentin Tarantino")
+                                    })
                                 })
                             })
                         })
@@ -77,37 +89,27 @@ impl EventHandler for Handler {
 
         // data.values contains the selected value from each select menus. We only have one menu,
         // so we retrieve the first
-        let animal = &interaction.data.values[0];
+        let director = &interaction.data.values[0];
 
         // Acknowledge the interaction and edit the message
         interaction
             .create_interaction_response(&ctx, |r| {
                 r.kind(InteractionResponseType::UpdateMessage)
                     .interaction_response_data(|d| {
-                        d.content(format!("You chose: **{}**\nNow choose a sound!", animal))
-                            .components(|c| {
-                                c.create_action_row(|r| {
-                                    // add_XXX methods are an alternative to create_XXX methods
-                                    r.add_button(sound_button("meow", "🐈".parse().unwrap()));
-                                    r.add_button(sound_button("woof", "🐕".parse().unwrap()));
-                                    r.add_button(sound_button("neigh", "🐎".parse().unwrap()));
-                                    r.add_button(sound_button(
-                                        "hoooooooonk",
-                                        "🦙".parse().unwrap(),
-                                    ));
-                                    r.add_button(sound_button(
-                                        "crab rave",
-                                        // Custom emojis in Discord are represented with
-                                        // `<:EMOJI_NAME:EMOJI_ID>`. You can see this by
-                                        // posting an emoji in your server and putting a backslash
-                                        // before the emoji.
-                                        //
-                                        // Because ReactionType implements FromStr, we can use .parse()
-                                        // to convert the textual emoji representation to ReactionType
-                                        "<:ferris:381919740114763787>".parse().unwrap(),
-                                    ))
-                                })
+                        d.content(format!(
+                            "You chose: **{}**\nNow choose a command!",
+                            director
+                        ))
+                        .components(|c| {
+                            c.create_action_row(|r| {
+                                // add_XXX methods are an alternative to create_XXX methods
+                                r.add_button(sound_button("action", "📣".parse().unwrap()));
+                                r.add_button(sound_button("cut", "📣".parse().unwrap()));
+                                r.add_button(sound_button("print it", "📣".parse().unwrap()));
+                                r.add_button(sound_button("another take", "📣".parse().unwrap()));
+                                r.add_button(sound_button("that's a wrap", "📣".parse().unwrap()))
                             })
+                        })
                     })
             })
             .await
@@ -120,7 +122,7 @@ impl EventHandler for Handler {
             .build();
 
         while let Some(interaction) = interaction_stream.next().await {
-            let sound = &interaction.data.custom_id;
+            let action = &interaction.data.custom_id;
             // Acknowledge the interaction and send a reply
             interaction
                 .create_interaction_response(&ctx, |r| {
@@ -129,7 +131,7 @@ impl EventHandler for Handler {
                         .interaction_response_data(|d| {
                             // Make the message hidden for other users by setting `ephemeral(true)`.
                             d.ephemeral(true)
-                                .content(format!("The **{}** says __{}__", animal, sound))
+                                .content(format!("**{}** yells __{}__!", director, action))
                         })
                 })
                 .await
@@ -149,14 +151,17 @@ async fn main() {
     let token = env::var("DISCORD_TOKEN").expect("Expected a token in the environment");
     let db_file = env::var("DB_FILE").expect("Expected a db file in the environment.");
 
-    //let db = db::init(&db_file).await.expect("Could not initialize db.");
+    let db = storage::init(&db_file)
+        .await
+        .expect("Could not initialize db.");
+    let handler = Handler { db };
 
     // Build our client.
     let intents = GatewayIntents::GUILD_MESSAGES
         | GatewayIntents::DIRECT_MESSAGES
         | GatewayIntents::MESSAGE_CONTENT;
     let mut client = Client::builder(token, intents)
-        .event_handler(Handler)
+        .event_handler(handler)
         .await
         .expect("Error creating client");
 
